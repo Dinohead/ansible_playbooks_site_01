@@ -1,0 +1,35 @@
+---
+#========================
+# File binaryServer.yml
+#
+# Description: Creates a binary server
+#
+# Author: Derek 'dRock' Halsey
+#========================
+
+- name: Ensure VM exsits
+  hosts: "{{ variable_host }}"
+  connection: local
+  gather_facts: false
+  roles:
+  - newClusterVm
+  tags:
+  - spawn
+
+- name: Initial Ububtu Configuration
+  hosts: "{{ variable_host }}"
+  gather_facts: false
+  roles:
+  - ubuntuSetup
+  - ubuntuUpdate
+  - ubuntuCifsClient
+  tags:
+  - initalConfig
+
+- name: Add Binary Server Role
+  hosts: "{{ variable_host }}"
+  gather_facts: false
+  roles:
+  - binary_server
+  tags:
+  - binaryServer

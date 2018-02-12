@@ -1,0 +1,36 @@
+---
+#========================
+# File darkServer.yml
+#
+# Description: Creates a dark server on the failover cluster
+#
+# Author: Derek 'dRock' Halsey
+#========================
+
+- name: Create the Cluster VM
+  hosts: "{{ variable_host }}"
+  connection: local
+  gather_facts: false
+  roles:
+  - newClusterVm
+  tags:
+  - spawn
+
+- name: Initial Ububtu Configuration
+  hosts: "{{ variable_host }}"
+  gather_facts: false
+  roles:
+  - linuxSetup
+  - ubuntuUpdate
+  - ubuntuCifsClient
+  tags:
+  - initalConfig
+
+- name: Initial Ububtu Configuration
+  hosts: "{{ variable_host }}"
+  gather_facts: true
+  roles:
+  - ubuntuDesktop
+  - transcoder
+  tags:
+  - transcoder

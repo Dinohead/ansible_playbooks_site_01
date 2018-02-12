@@ -1,0 +1,432 @@
+---
+#=====
+# File: 
+# playbooks/cosmic_seed.yml
+# Description:
+#
+# Author: 
+#  - Derek 'dRock' Halsey
+# Example:
+#=====
+
+- name: PLAYBOOK | cosmic_seed.yml - Initiate Cosmic Seed
+  hosts: localhost
+  gather_facts: false
+
+#-----
+# Create Base VMs
+# Create the new VMs and configure networking and hostname
+# VM variable files should be configured in host_vars folder
+# VMs should be defined in the inventories/[inventorory name] file
+#-----
+
+- name: Ensure VM exists and ssh keys are present
+  hosts: "{{ variable_host }}"
+  connection: local
+  gather_facts: false
+  roles:
+  - role: newClusterVm
+    newClusterVm:
+      fqdn: "{{ host.fqdn }}"
+      sdn: "{{ host.name }}"
+      processors: "{{ host.processors }}"
+      node: "{{ host.node }}"
+      memory:
+        type: "{{ host.memory.type }}"
+        min: "{{ host.memory.min }}"
+        max: "{{ host.memory.max }}"
+      network:
+        vSwitch: "{{ host.network.vSwitch }}"
+        ip: "{{ host.network.ip }}"
+        subnet: "{{ host.network.subnet }}"
+        dns: "{{ host.network.dns }}"
+        gateway: "{{ host.network.gateway }}"
+      hyperV:
+        host: "{{ groups.hyper_v[0] }}"
+        cluster: "{{ groups.hyper_v_cluster[0] }}"
+        storagePath: "{{ ( templates | selectattr('name', 'equalto', host.vhdxTemplate ) | list )[0].path }}"
+        vhdxTemplate: "{{ host.vhdxTemplate }}"
+      dnsServer: "{{ groups.dc[0] }}"
+  tags:
+  - spawn
+  - newVm
+
+- name: Initial Linux Setup
+  hosts: "{{ variable_host }}"
+  gather_facts: false
+  roles:
+  - role: linuxSetup
+    linuxSetup:
+      user:
+        name: "{{ host.ansible_user }}"
+        password: "{{ host.ansible_password }}"
+      ssh:
+        public: "{{ host.public_key }}"
+        private: "{{ host.private_key }}"
+        authorizedKeys: "{{ host.authorized_keys }}"
+      sdn: "{{ host.name }}"
+      fqdn: "{{ host.fqdn }}"
+      ip: "{{ host.network.ip }}"
+      interface: "{{ host.network.interface }}"
+      becomePass: "{{ host.root_password }}"
+  tags:
+  - setup
+  - newVm
+
+#-----
+# Configure Storage
+#
+#    For num_part, we are trying to figure out how many partitions should be configured on the host.
+#    There is a templates dictionary in group_vars/all/template that defines attributes of known templates.
+#    Within the host's host_vars, we can also find the template this host was built from: host.vm_template.
+#
+#    the first line selects the template where host.vm_template matches an item in the template dictionary
+#    the second line selects the device attribute
+#    the third line selects the attribute with a name of 'sda' and returns the partition field
+#
+#    I apologize if you hate the formatting; i thought splitting it up would help to explain what is happening
+#-----
+- name: ROLE | Ensure correct number of partitions and assign additional disk space to the last partition
+  hosts: ["{{variable_host }}"]
+  gather_facts: false
+  roles:
+  - role: add_partition
+    add_partition:
+      device: /dev/sda
+      num_part: "{{
+                    (
+                     (
+                       ( templates | selectattr('name', 'equalto', host.vhdxTemplate ) | list
+                       )[0].device
+                     ) | selectattr('name', 'equalto', 'sda' ) | list )[0].partitions + 1
+                  }}"
+      vg_name: vg_rhel7
+      lv_name: lv_u01
+      path: /u01
+      type: xfs
+      mode: 'u=rwx,g=rwx,o=rx'
+      owner: root
+      group: root
+  tags:
+  - newVm
+  - storage
+
+#-----
+# Stop and disable the NetworkManager and firewalld
+#-----
+- name: SERVICE | Stop and disable the NetworkManager and firewalld
+  hosts: ["{{variable_host }}:!api-gateways"]
+  gather_facts: false
+  tasks:
+  - become: true
+    become_user: root
+    service:
+      name: "{{ item }}"
+      state: stopped
+      enabled: no
+    with_items:
+    - NetworkManager
+    - firewalld
+  tags:
+  - newVm
+  - services
+
+- name: FILE | Ensure Directory is present for repositories
+  hosts: ["binary-servers:jenkins-plugin-servers:yum-servers:pip-servers:&{{ variable_host }}"]
+  gather_facts: false
+  tags:
+  - newVm
+  tasks:
+
+  - become: true
+    become_user: root
+    file:
+      path: /u01/repo
+      owner: root
+      group: root
+      state: directory
+      mode: 'u=rwx,g=rwx,o=rx'
+
+- name: ROLE | Use cifs_client role to create cifs mounts on the hosts
+  hosts: "{{ variable_host }}"
+  gather_facts: false
+  tags:
+  - newVm
+  - cifs
+  roles:
+  - role: cifs_client
+    cifs_client:
+      user:
+        name: "{{ host.ansible_user }}"
+        password: "{{ host.ansible_password }}"
+      group:
+        gid: 2473
+        name: samba
+      smbCredentialsDir: /root/.smbcredentials
+      mount: "{{ host.mount }}"
+
+#-----
+# Write a note about copying in the package binaries
+#-----
+- name: PLAY | Wait for repositories to be manually copied to the binary, jenkins-plugin, yum, and pip servers
+  hosts: localhost
+  gather_facts: false
+  tags:
+  - wait
+  tasks:
+
+  - pause:
+      prompt: "Pause | Please manually copy 'binaries', 'epel-6', 'epel-7', 'itcc-6', 'itcc-7', 'packages', 'pypi-packages', 'jenkins_plugins', 'rhel-6-server-rpms' and 'rhel-7-server-rpms' directories to /u01/repo"
+
+#-----
+# Apply Nexus Server role
+# NOTE: Your inventory should define relevant nexus role variables in group_vars
+# with the exception of the 2 passwords below, which should be defined in your
+# vault and mapped in as shown below.
+#-----
+- name: PLAY | Apply the nexus server role
+  hosts: ["{{variable_host }}:&nexus-servers"]
+  become: true
+  gather_facts: true
+  tags:
+  - nexusServer
+  vars:
+    - nexus_admin_password: "{{ vault_nexus_admin_password }}"
+    - nexus_user_password_jenkins: "{{ vault_nexus_user_password_jenkins }}"
+  roles:
+  - role: ansible_nexus_oss
+
+#-----
+# Apply maven role
+#-----
+- name: PLAY | Apply the maven role
+  hosts: ["{{ variable_host }}:&maven-clients"]
+  become: true
+  gather_facts: true
+  tags:
+  - maven
+  roles:
+  - role: ansible_role_maven
+
+#-----
+# Apply maven nexus config role
+#-----
+- name: PLAY | Apply the maven nexus config role
+  hosts: ["{{ variable_host }}:&maven-clients"]
+  become: true
+  gather_facts: true
+  tags:
+  - mavenNexus
+  roles:
+  - role: ansible_role_maven_nexus_config
+
+#-----
+# Apply pip nexus config role
+#-----
+- name: PLAY | Apply the pip nexus config role
+  hosts: ["{{ variable_host }}:&pip-clients"]
+  become: true
+  gather_facts: true
+  tags:
+  - pipNexus
+  roles:
+  - role: ansible_role_pip_nexus_config
+
+#-----
+# Apply Binary Server role
+#-----
+- name: PLAY | Apply the binary_server role to seup a custom binary repository
+  hosts: ["{{variable_host }}:&binary-servers"]
+  gather_facts: false
+  tags:
+  - binaryServer
+  roles:
+  - role: binary_server
+    when: host.server_repos.binary is defined
+    binary_server:
+      repos: "{{ host.server_repos.binary }}"
+      directory:
+        repo: /u01/repo
+        install: /u01/repo/install
+
+#-----
+# Apply Yum Server role
+#-----
+- name: PLAY | Apply the yum_server role to seup a custom YUM repository
+  hosts: ["{{variable_host }}:&yum-servers"]
+  gather_facts: false
+  tags:
+  - yumServer
+  roles:
+  - role: yum_server
+    yum_server:
+      repos: "{{ host.server_repos.yum }}"
+      directory:
+        repo: /u01/repo
+        install: /u01/repo/install
+    when: host.server_repos.yum is defined
+
+#-----
+# Configure new VMs to get YUM updates from repo01
+# Perform update of OS packages
+#-----
+- name: PLAY | Configure yum client and update systems
+  hosts: ["{{variable_host }}"]
+  gather_facts: false
+  tags:
+  - yumClient
+  roles:
+  - role: yum_client
+    yum_client:
+      repos:  "{{ host.client_repos.yum }}"
+  - role: yum_update
+
+#-----
+# Configure ntp
+#-----
+- name: ROLE | Configure NTP
+  hosts: ["{{variable_host }}"]
+  gather_facts: false
+  roles: [ ntp ]
+  tags:
+  - ntp
+
+#-----
+# Configure Pypi server
+#-----
+- name: PLAY | Configure Pypi Server
+  hosts: ["{{ variable_host }}:&pip-servers"]
+  gather_facts: false
+  tags:
+  - pipServer
+  roles:
+  - role: pip_server
+    pip_server:
+      user: jenkins
+      script: pypi-server-standalone.py
+      script_dest_dir: /home/jenkins/bin
+      script_log_dir: /home/jenkins/log
+      package_dir: /u01/repo/pypi-packages
+    when: host.server_repos.pypi is defined and host.server_repos.pypi == true
+
+
+#-----
+# Configure Pypi client
+#-----
+- name: PLAY | Configure pypi client
+  hosts: ["{{ variable_host }}"]
+  gather_facts: false
+  tags:
+  - pipClient
+  roles:
+  - role: pip_client
+    pip_client:
+      host: "{{ host.client_repos.pypi[0] }}"
+      url: "http://{{ host.client_repos.pypi[0] }}:8080/simple"
+    when: host.client_repos.pypi is defined
+
+#-----
+# Configure git server
+#-----
+- name: PLAY | Configure Git Server
+  hosts: ["{{variable_host }}:&git-servers"]
+  gather_facts: false
+  tags:
+  - gitServer
+  roles:
+  - role: git_server
+    when: host.server_repos.git is defined and host.server_repos.git == true
+
+#-----
+# Configure ansible controller
+#-----
+- name: PLAY | Configure ansible controller
+  hosts: ["{{variable_host }}:&ansible-controllers"]
+  gather_facts: false
+  tags:
+  - ansibleController
+  roles:
+  - role: ansible_controller
+    ansible_controller:
+      user: "{{ host.ansible_user }}"
+      path: "/home/{{ host.ansible_user }}/venv_ansible-2.4.3.0"
+      version: 2.4.3.0
+    ansible_controller_selinux:
+      src: http://repo01/binaries/python/custom/selinux/libselinux-2.5-11.el7.x86_64.tar.gz
+
+  
+#-----
+# Configure a Juseppe server to serve Jenkins plugins to a Jenkins server.
+# This is essentially a custom Jenkins Update Center where your Jenkins server
+# cannot reach https://jenkins-ci.org/update-center.json via the Internet.
+#
+# Ensure the host this is run against has Jenkins plugins downloaded and copied
+# to the 'jenkins_plugins' directory (e.g., repo01:/repo/jenkins_plugins)
+#-----
+- name: PLAY | Configure Jenkins Plugin Server
+  hosts: ["{{variable_host }}:&jenkins-plugin-servers"]
+  gather_facts: false
+  tags:
+  - jenkinsPluginServer
+  roles:
+  - role: jenkins_plugin_repository
+    when: host.server_repos.jenkins is defined and host.server_repos.jenkins == true
+
+#-----
+# Configure a host to act as a Jenkins Server
+#  
+#  - installs plugins by fetching from a Jenkins update center (e.g. the host
+#    configured by the previous play.
+#  - recommended plugins are provided below and can easily be tuned by adding or
+#    removing to/from the list below
+#-----
+- name: PLAY | Configure Jenkins Server
+  hosts: ["{{variable_host }}:&jenkins-servers"]
+  gather_facts: true
+  tags:
+  - jenkinsServer
+  roles:
+  - role: jenkins_server
+      
+#-----
+# Configure Jenkins Slaves
+# At a minimum, we want the ansible controller to be a slave to Jenkins such
+# that playbooks can be triggered in various pipelines.
+#-----
+- name: PLAY | Configure Jenkins Slaves
+  hosts: ["{{variable_host }}:&ansible-controllers"]
+  gather_facts: true
+  tags:
+  - jenkinsSlaves
+  roles:
+  - role: jenkins_slave
+    jenkins_slave_jenkins_slave_name: "{{ inventory_hostname }}"
+    jenkins_slave_jenkins_label: "'{{ inventory_hostname }} ansible'"
+    jenkins_slave_swarm_num_executors: 2
+
+#-----
+# Configure a CA server to act as a central CA for everything
+#-----
+- name: PLAY | Configure CFSSL CA Server
+  hosts: ["{{variable_host }}:&certificate-authority-servers"]
+  gather_facts: false
+  tags:
+  - cfsslCaServer
+  roles:
+  - role: cfssl_ca
+
+#-----
+# Test CSR generation and signature by CA
+# NOTE: This is only an example of getting a certificate from the CA for the
+# Ansible server.  It shouldn't be needed for anything operational, but is a
+# good example for other playbooks/plays (e.g. big_bang) that may need to
+# request/install certs.
+#-----
+#- name: PLAY | Get some serts for Ansible
+#  hosts: ["{{variable_host }}:&ansible-controllers"]
+#  gather_facts: false
+#  tags:
+#  - cfsslEndpoint
+#  roles:
+#  - role: cfssl_endpoint
+

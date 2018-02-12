@@ -1,0 +1,15 @@
+---
+#========================
+# File newClusterVm.yml
+#
+# Description: Creates a VM on the failover cluster
+#
+# Author: Derek 'dRock' Halsey
+#========================
+
+- name: PLAYBOOK | newUbuntuServer - create a new Ubuntu Server on the Hyper-V host
+  hosts: "{{ variable_host }}"
+  connection: local
+  gather_facts: false
+  roles:
+  - newClusterVm

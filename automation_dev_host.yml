@@ -1,0 +1,248 @@
+---
+#=====
+# File:
+# playbooks/automation_dev_host.yml
+# Description:
+#
+# Author:
+#  - Derek 'dRock' Halsey
+#
+# Example:
+#
+#=====
+
+- name: PLAYBOOK | automation_dev_host.yml - Development machines should never be pets
+  gather_facts: false
+  hosts: localhost
+  tags:
+  - time
+  tasks:
+  - set_fact:
+      beginTime: "{{ lookup('pipe', 'date +%Y\"-\"%d\"-\"%m\" \"%H\":\"%M\":\"%S') }}"
+
+  - debug:
+      msg: "Start Time - {{ beginTime }}"
+
+- name: Ensure VM exists
+  hosts: "{{ variable_host }}"
+  connection: local
+  gather_facts: false
+  roles: [ hyper_v_clustered_instance ]
+  tags:
+  - spawn
+  - newVm
+
+#-----
+# Inital Linux Setup
+#
+# linux_setup dict defined in
+# enviornment/group_vars/linux/linux_setup.yml
+#-----
+
+- name: Initial Linux Setup
+  hosts: "{{ variable_host }}"
+  gather_facts: false
+  roles: [ linux_setup ]
+  tags:
+  - setup
+  - newVm
+
+- name: ROLE | Ensure correct number of partitions and assign additional disk space to the last partition
+  hosts: "{{variable_host }}"
+  gather_facts: false
+  roles: [ add_partition ]
+  tags:
+    - newVm
+    - storage
+
+#-----
+# Stop and disable the NetworkManager and firewalld
+#-----
+- name: SERVICE | Stop and disable the NetworkManager and firewalld
+  hosts: ["{{variable_host }}"]
+  gather_facts: false
+  tasks:
+  - become: true
+    become_user: root
+    service:
+      name: "{{ item }}"
+      state: stopped
+      enabled: no
+    with_items:
+    - NetworkManager
+    - firewalld
+  tags:
+  - newVm
+  - services
+
+#-----
+# Configure new VMs to get YUM updates from repo01
+# Perform update of OS packages
+#-----
+- name: PLAY | Configure yum client and update systems
+  hosts: ["{{ variable_host }}"]
+  gather_facts: false
+  roles:
+  - yum_client
+  - yum_update
+  tags:
+  - yumClient
+
+#-----
+# Configure ntp
+#-----
+- name: ROLE | Configure NTP
+  hosts: ["{{variable_host }}"]
+  gather_facts: false
+  roles: [ ntp ]
+  tags:
+  - ntp
+
+#-----
+# Configure ansible controller
+#-----
+- name: PLAY | Configure ansible 2.4 controller
+  hosts: ["{{variable_host }}"]
+  gather_facts: false
+  roles: [ ansible_controller ]
+  tags:
+  - ansibleController
+
+#-----
+# Enable xrdp
+#-----
+- name: ROLE | Enable xrdp
+  hosts: ["{{ variable_host }}"]
+  gather_facts: false
+  roles: [xrdp]
+  tags:
+  - xrdp
+
+- name: ROLE | Apply Java role to manage java versions on host and create links
+  hosts: ["{{ variable_host }}"]
+  gather_facts: false
+  roles: [ java_oracle ]
+  tags:
+  - java
+
+#-----
+# Enable intellij
+#-----
+- name: ROLE | Install Intellij
+  hosts: ["{{ variable_host }}"]
+  gather_facts: false
+  roles: [ intellij ]
+  tags:
+  - intellij
+
+#-----
+# Install Packages
+#-----
+- name: PLAY | Install Packages
+  hosts: ["{{ variable_host }}"]
+  gather_facts: false
+  tags:
+  - yumPackages
+  tasks:
+  - become: true
+    become_user: root
+    yum:
+      name: "{{ item }}"
+      state: present
+      update_cache: yes
+    with_items: "{{ host.rpms }}"
+
+#-----
+# Disable Chrome repo
+#-----
+
+- name: PLAY | Disable Chrome Repo
+  hosts: ["{{ variable_host }}"]
+  gather_facts: false
+  tags:
+  - chromeRepo
+  tasks:
+  - become: true
+    become_user: root
+    lineinfile:
+      path: /etc/yum.repos.d/google-chrome.repo
+      line: 'enabled=0'
+      regexp: '^enabled'
+
+#-----
+# Add cifs mounts
+#-----
+- name: ROLE | Create cifs shares
+  hosts: ["{{ variable_host }}"]
+  gather_facts: false
+  roles: [ cifs_client ]
+  tags:
+  - cifs
+
+#-----
+# Add user
+#-----
+- name: PLAY | Add user
+  hosts: ["{{ variable_host }}"]
+  gather_facts: false
+  tags:
+  - user
+
+  tasks:
+  - name: USER | Create user
+    become: true
+    become_user: root
+    user:
+      name: "{{ host.developer_name }}"
+      password: "{{ host.developer_password }}"
+      shell: /bin/bash
+      groups: samba,wheel
+      append: true
+      generate_ssh_key: true
+
+
+  - name: LINEINFILE | Add passwordless ssh for user
+    become: true
+    become_user: root
+    lineinfile:
+      path: /etc/sudoers
+      line: '%{{ host.developer_name }}  ALL=(ALL) NOPASSWD: ALL'
+      state: present
+
+#-----
+# Customize Gnome 3
+#-----
+- name: ROLE | Customize Gnome 3
+  hosts: ["{{ variable_host }}"]
+  gather_facts: false
+  tags:
+  - gnome
+  roles:
+  - name: ROLE | Customize Gnome 3 for Jenkins
+    role: gnome_customize
+    gnome_customize:
+      user: "{{ host.ansible_user }}"
+      dash2dock_src: http://repo01/binaries/gnome/dash_to_dock/gnome_3.22/dash-to-dock@micxgx.gmail.com.v61.shell-extension.zip
+
+  - name: ROLE | Customize Gnome 3 for user
+    role: gnome_customize
+    gnome_customize:
+      user: "{{ host.developer_name }}"
+      dash2dock_src: http://repo01/binaries/gnome/dash_to_dock/gnome_3.22/dash-to-dock@micxgx.gmail.com.v61.shell-extension.zip
+
+- name: ROLE | Add VMware_remote console
+  hosts: ["{{ variable_host }}"]
+  gather_facts: true
+  roles: [ vmware_remote_console ]
+  tags:
+  - vmrc
+
+#-----
+# Enable SQL Developer
+#-----
+- name: ROLE | Install SQL Developer
+  hosts: ["{{ variable_host }}"]
+  gather_facts: false
+  roles: [ sql_developer ]
+  tags:
+  - sqlDeveloper

@@ -23,7 +23,7 @@
 # enviornment/group_vars/all/hyper_v_clustered_instance.yml
 #-----
 
-- name: Ensure VM exists and ssh keys are present
+- name: Ensure VM exists
   hosts: "{{ variable_host }}"
   connection: local
   gather_facts: false
@@ -54,7 +54,7 @@
 # enviornment/group_vars/linux/add_partition.yml
 #-----
 - name: ROLE | Ensure correct number of partitions and assign additional disk space to the last partition
-  hosts: ["{{variable_host }}"]
+  hosts: "{{variable_host }}"
   gather_facts: false
   roles: [ add_partition ]
   tags:
@@ -65,7 +65,7 @@
 # Stop and disable the NetworkManager and firewalld
 #-----
 - name: SERVICE | Stop and disable the NetworkManager and firewalld
-  hosts: ["{{variable_host }}:!api-gateways"]
+  hosts: "{{variable_host }}"
   gather_facts: false
   tasks:
   - become: true

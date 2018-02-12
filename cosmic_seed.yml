@@ -178,8 +178,9 @@
 - name: PLAY | Apply the binary_server role to seup a custom binary repository
   hosts: ["{{variable_host }}:&binary-servers"]
   gather_facts: false
-  roles: [ binary_server ]
-  when: host.server_repos.binary is defined
+  roles:
+  - role: binary_server 
+    when: host.server_repos.binary is defined
   tags:
   - binaryServer
 
@@ -189,8 +190,9 @@
 - name: PLAY | Apply the yum_server role to seup a custom YUM repository
   hosts: ["{{variable_host }}:&yum-servers"]
   gather_facts: false
-  roles: [ yum_server ]
-  when: host.server_repos.yum is defined
+  roles: 
+  - role: yum_server
+    when: host.server_repos.yum is defined
   tags:
   - yumServer
 
@@ -223,8 +225,9 @@
 - name: PLAY | Configure Git Server
   hosts: ["{{variable_host }}:&git-servers"]
   gather_facts: false
-  roles: [ git_server ]
-  when: host.server_repos.git is defined and host.server_repos.git == true
+  roles: 
+  - role: git_server
+    when: host.server_repos.git is defined and host.server_repos.git == true
   tags:
   - gitServer
 

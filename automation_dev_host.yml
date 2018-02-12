@@ -180,36 +180,6 @@
   - cifs
 
 #-----
-# Add user
-#-----
-- name: PLAY | Add user
-  hosts: ["{{ variable_host }}"]
-  gather_facts: false
-  tags:
-  - user
-
-  tasks:
-  - name: USER | Create user
-    become: true
-    become_user: root
-    user:
-      name: "{{ host.developer_name }}"
-      password: "{{ host.developer_password }}"
-      shell: /bin/bash
-      groups: samba,wheel
-      append: true
-      generate_ssh_key: true
-
-
-  - name: LINEINFILE | Add passwordless ssh for user
-    become: true
-    become_user: root
-    lineinfile:
-      path: /etc/sudoers
-      line: '%{{ host.developer_name }}  ALL=(ALL) NOPASSWD: ALL'
-      state: present
-
-#-----
 # Customize Gnome 3
 #-----
 - name: ROLE | Customize Gnome 3
@@ -224,25 +194,12 @@
       user: "{{ host.ansible_user }}"
       dash2dock_src: http://repo01/binaries/gnome/dash_to_dock/gnome_3.22/dash-to-dock@micxgx.gmail.com.v61.shell-extension.zip
 
-  - name: ROLE | Customize Gnome 3 for user
-    role: gnome_customize
-    gnome_customize:
-      user: "{{ host.developer_name }}"
-      dash2dock_src: http://repo01/binaries/gnome/dash_to_dock/gnome_3.22/dash-to-dock@micxgx.gmail.com.v61.shell-extension.zip
-
+#-----
+# Add VMware_remote console
+#-----
 - name: ROLE | Add VMware_remote console
   hosts: ["{{ variable_host }}"]
   gather_facts: true
   roles: [ vmware_remote_console ]
   tags:
   - vmrc
-
-#-----
-# Enable SQL Developer
-#-----
-- name: ROLE | Install SQL Developer
-  hosts: ["{{ variable_host }}"]
-  gather_facts: false
-  roles: [ sql_developer ]
-  tags:
-  - sqlDeveloper

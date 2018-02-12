@@ -1,6 +1,6 @@
 ---
 #========================
-# File destroyClusterVm.yml
+# File destroy_clustered_instance.yml
 #
 # Description: Destroys a VM on from the failover cluster
 #
@@ -17,7 +17,7 @@
     delegate_to: "{{ groups.hyper_v_cluster[0] }}"
     win_shell: |-
       try {
-        get-clusterresource -cluster {{ groups.hyper_v_cluster[0] }} | where resourcetype -eq 'Virtual Machine' | where name -eq 'Virtual Machine {{ hostvar.sdn }}' | get-vm | Move-ClusterVirtualMachineRole -migrationtype live -node {{ groups.hyper_v[0] }} -wait 0 -ea stop
+        get-clusterresource -cluster {{ groups.hyper_v_cluster[0] }} | where resourcetype -eq 'Virtual Machine' | where name -eq 'Virtual Machine {{ host.sdn }}' | get-vm | Move-ClusterVirtualMachineRole -migrationtype live -node {{ groups.hyper_v[0] }} -wait 0 -ea stop
       } catch [Microsoft.FailoverClusters.PowerShell.ClusterCmdletException] {
         Write-Output "The virtual machine resource is already on the node.  Migration is not needed."
       }
@@ -25,29 +25,29 @@
   - name: WIN_SHELL | Remove the VM from the cluster
     delegate_to: "{{ groups.hyper_v_cluster[0] }}"
     win_shell: |-
-      if ( Get-ClusterResource -Cluster {{ groups.hyper_v_cluster[0] }} -Name "Virtual Machine {{ hostvar.sdn }}" -erroraction 'ignore' ) {
-        Remove-ClusterGroup {{ hostvar.sdn }} -RemoveResources -cluster {{ groups.hyper_v_cluster[0] }} -Force }
+      if ( Get-ClusterResource -Cluster {{ groups.hyper_v_cluster[0] }} -Name "Virtual Machine {{ host.sdn }}" -erroraction 'ignore' ) {
+        Remove-ClusterGroup {{ host.sdn }} -RemoveResources -cluster {{ groups.hyper_v_cluster[0] }} -Force }
 
   - name: WIN_SHELL | Stop the VM
     delegate_to: "{{ groups.hyper_v[0] }}"
     win_shell: |-
-      if ( Get-VM -name {{ hostvar.sdn }} -erroraction 'ignore' ) {
-        stop-vm {{ hostvar.sdn }} -Force }
+      if ( Get-VM -name {{ host.sdn }} -erroraction 'ignore' ) {
+        stop-vm {{ host.sdn }} -Force }
 
   - name: WIN_SHELL | Remove the VM from the Hyper-V host
     delegate_to: "{{ groups.hyper_v[0] }}"
     win_shell: |-
-      if ( Get-VM -name {{ hostvar.sdn }} -erroraction 'ignore' ) {
-        remove-vm {{ hostvar.sdn }} -Force }
+      if ( Get-VM -name {{ host.sdn }} -erroraction 'ignore' ) {
+        remove-vm {{ host.sdn }} -Force }
 
   - name: WIN_FILE | Remove VM from cluster storage
     delegate_to: "{{ groups.hyper_v[0] }}"
     win_file:
-      path: "{{ hyperV.storagePath }}\\{{ hostvar.sdn }}"
+      path: "{{ hyper_v.storage_path }}\\{{ host.sdn }}"
       state: absent
 
   - name: WIN_SHELL | Remove DNS entry
     delegate_to: "{{ groups.dc[0] }}"
     win_shell: |-
-      if ( Get-DnsServerResourceRecord -Name "{{ hostvar.sdn }}" -ZoneName "{{ domain }}" -erroraction 'ignore' ) {
-        Remove-DnsServerResourceRecord -ZoneName "{{ domain }}" -RRType "A" -Name "{{ hostvar.sdn }}" -Force }
+      if ( Get-DnsServerResourceRecord -Name "{{ host.sdn }}" -ZoneName "{{ domain }}" -erroraction 'ignore' ) {
+        Remove-DnsServerResourceRecord -ZoneName "{{ domain }}" -RRType "A" -Name "{{ host.sdn }}" -Force }

@@ -1,8 +1,8 @@
 ---
 #========================
-# File darkServer.yml
+# File fix_chrome_rd.yml
 #
-# Description: Creates a dark server on the failover cluster
+# Description: Fix chrome remote desktop when it gets messed up
 #
 # Author: Derek 'dRock' Halsey
 #========================
@@ -48,15 +48,14 @@
     local_action:
       module: wait_for
       port: 22
-      host: "{{ hostvar.fqdn }}"
+      host: "{{ host.fqdn }}"
       delay: 30
       timeout: 400
 
 - name: Apply transcoder role
   hosts: "{{ variable_host }}"
   gather_facts: true
-  roles:
-  - transcoder
+  roles: [ transcoder ]
   tags:
   - transcoder
 
@@ -78,6 +77,6 @@
     local_action:
       module: wait_for
       port: 22
-      host: "{{ hostvar.fqdn }}"
+      host: "{{ host.fqdn }}"
       delay: 30
       timeout: 400

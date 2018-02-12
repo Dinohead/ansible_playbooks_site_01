@@ -1,14 +1,14 @@
 ---
 #========================
-# File linuxSetup.yml
+# File ubuntu_update.yml
 #
-# Description: Setup Ubuntu Hosts
+# Description: Update Ubuntu hosts
 #
 # Author: Derek 'dRock' Halsey
 #========================
 
-- name: Setup Ubuntu hosts
+- name: Update Ubuntu hosts
   hosts: ubuntu
   gather_facts: false
   roles:
-  - linuxSetup
+  - ubuntuUpdate

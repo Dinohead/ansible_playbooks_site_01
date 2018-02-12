@@ -1,6 +1,6 @@
 ---
 #========================
-# File newClusterVm.yml
+# File hyper_v_clustered_instance.yml
 #
 # Description: Creates a VM on the failover cluster
 #
@@ -12,4 +12,4 @@
   connection: local
   gather_facts: false
   roles:
-  - newClusterVm
+  - hyper_v_clustered_instance

@@ -1,8 +1,8 @@
 ---
 #========================
-# File binaryServer.yml
+# File ubuntu_server.yml
 #
-# Description: Creates a binary server
+# Description: Creates a base Ubuntu Server
 #
 # Author: Derek 'dRock' Halsey
 #========================
@@ -12,7 +12,7 @@
   connection: local
   gather_facts: false
   roles:
-  - newClusterVm
+  - hyper_v_clustered_instance
   tags:
   - spawn
 
@@ -20,16 +20,8 @@
   hosts: "{{ variable_host }}"
   gather_facts: false
   roles:
-  - ubuntuSetup
+  - linux_setup
   - ubuntuUpdate
-  - ubuntuCifsClient
+  - ubuntu_cifs_client
   tags:
   - initalConfig
-
-- name: Add Binary Server Role
-  hosts: "{{ variable_host }}"
-  gather_facts: false
-  roles:
-  - binary_server
-  tags:
-  - binaryServer

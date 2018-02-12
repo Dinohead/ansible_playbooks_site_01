@@ -1,6 +1,6 @@
 ---
 #========================
-# File darkServer.yml
+# File dark_server.yml
 #
 # Description: Creates a dark server on the failover cluster
 #
@@ -12,7 +12,7 @@
   connection: local
   gather_facts: false
   roles:
-  - newClusterVm
+  - hyper_v_clustered_instance
   tags:
   - spawn
 
@@ -20,9 +20,9 @@
   hosts: "{{ variable_host }}"
   gather_facts: false
   roles:
-  - linuxSetup
+  - linux_setup
   - ubuntuUpdate
-  - ubuntuCifsClient
+  - ubuntu_cifs_client
   tags:
   - initalConfig
 
@@ -30,7 +30,10 @@
   hosts: "{{ variable_host }}"
   gather_facts: true
   roles:
-  - ubuntuDesktop
+  - ubuntu_desktop
   - transcoder
+    transcoder:
+      user: "{{ ansible_user }}"
+      fqdn: "{{ host.fqdn }}"
   tags:
   - transcoder

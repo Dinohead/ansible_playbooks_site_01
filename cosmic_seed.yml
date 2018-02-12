@@ -2,7 +2,7 @@
 #=====
 # File: 
 # playbooks/cosmic_seed.yml
-# Description:
+# Description: create an ASP
 #
 # Author: 
 #  - Derek 'dRock' Halsey
@@ -18,57 +18,31 @@
 # Create the new VMs and configure networking and hostname
 # VM variable files should be configured in host_vars folder
 # VMs should be defined in the inventories/[inventorory name] file
+#
+# hyper_v_clustered_instance dict defined in
+# enviornment/group_vars/all/hyper_v_clustered_instance.yml
 #-----
 
 - name: Ensure VM exists and ssh keys are present
   hosts: "{{ variable_host }}"
   connection: local
   gather_facts: false
-  roles:
-  - role: newClusterVm
-    newClusterVm:
-      fqdn: "{{ host.fqdn }}"
-      sdn: "{{ host.name }}"
-      processors: "{{ host.processors }}"
-      node: "{{ host.node }}"
-      memory:
-        type: "{{ host.memory.type }}"
-        min: "{{ host.memory.min }}"
-        max: "{{ host.memory.max }}"
-      network:
-        vSwitch: "{{ host.network.vSwitch }}"
-        ip: "{{ host.network.ip }}"
-        subnet: "{{ host.network.subnet }}"
-        dns: "{{ host.network.dns }}"
-        gateway: "{{ host.network.gateway }}"
-      hyperV:
-        host: "{{ groups.hyper_v[0] }}"
-        cluster: "{{ groups.hyper_v_cluster[0] }}"
-        storagePath: "{{ ( templates | selectattr('name', 'equalto', host.vhdxTemplate ) | list )[0].path }}"
-        vhdxTemplate: "{{ host.vhdxTemplate }}"
-      dnsServer: "{{ groups.dc[0] }}"
+  roles: [ hyper_v_clustered_instance ]
   tags:
   - spawn
   - newVm
 
+#-----
+# Inital Linux Setup
+#
+# linux_setup dict defined in
+# enviornment/group_vars/linux/linux_setup.yml
+#-----
+
 - name: Initial Linux Setup
   hosts: "{{ variable_host }}"
   gather_facts: false
-  roles:
-  - role: linuxSetup
-    linuxSetup:
-      user:
-        name: "{{ host.ansible_user }}"
-        password: "{{ host.ansible_password }}"
-      ssh:
-        public: "{{ host.public_key }}"
-        private: "{{ host.private_key }}"
-        authorizedKeys: "{{ host.authorized_keys }}"
-      sdn: "{{ host.name }}"
-      fqdn: "{{ host.fqdn }}"
-      ip: "{{ host.network.ip }}"
-      interface: "{{ host.network.interface }}"
-      becomePass: "{{ host.root_password }}"
+  roles: [ linux_setup ]
   tags:
   - setup
   - newVm
@@ -76,37 +50,13 @@
 #-----
 # Configure Storage
 #
-#    For num_part, we are trying to figure out how many partitions should be configured on the host.
-#    There is a templates dictionary in group_vars/all/template that defines attributes of known templates.
-#    Within the host's host_vars, we can also find the template this host was built from: host.vm_template.
-#
-#    the first line selects the template where host.vm_template matches an item in the template dictionary
-#    the second line selects the device attribute
-#    the third line selects the attribute with a name of 'sda' and returns the partition field
-#
-#    I apologize if you hate the formatting; i thought splitting it up would help to explain what is happening
+# add_partiton dict defined in
+# enviornment/group_vars/linux/add_partition.yml
 #-----
 - name: ROLE | Ensure correct number of partitions and assign additional disk space to the last partition
   hosts: ["{{variable_host }}"]
   gather_facts: false
-  roles:
-  - role: add_partition
-    add_partition:
-      device: /dev/sda
-      num_part: "{{
-                    (
-                     (
-                       ( templates | selectattr('name', 'equalto', host.vhdxTemplate ) | list
-                       )[0].device
-                     ) | selectattr('name', 'equalto', 'sda' ) | list )[0].partitions + 1
-                  }}"
-      vg_name: vg_rhel7
-      lv_name: lv_u01
-      path: /u01
-      type: xfs
-      mode: 'u=rwx,g=rwx,o=rx'
-      owner: root
-      group: root
+  roles: [ add_partition ]
   tags:
   - newVm
   - storage
@@ -147,23 +97,20 @@
       state: directory
       mode: 'u=rwx,g=rwx,o=rx'
 
+#-----
+# Create cifs mounts
+#
+# add_partiton dict defined in
+# enviornment/group_vars/redhat/cifs_client.yml
+#-----
+
 - name: ROLE | Use cifs_client role to create cifs mounts on the hosts
   hosts: "{{ variable_host }}"
   gather_facts: false
+  roles: [ cifs_client ]
   tags:
   - newVm
   - cifs
-  roles:
-  - role: cifs_client
-    cifs_client:
-      user:
-        name: "{{ host.ansible_user }}"
-        password: "{{ host.ansible_password }}"
-      group:
-        gid: 2473
-        name: samba
-      smbCredentialsDir: /root/.smbcredentials
-      mount: "{{ host.mount }}"
 
 #-----
 # Write a note about copying in the package binaries
@@ -188,13 +135,9 @@
   hosts: ["{{variable_host }}:&nexus-servers"]
   become: true
   gather_facts: true
+  roles: [ ansible_nexus_oss ]
   tags:
   - nexusServer
-  vars:
-    - nexus_admin_password: "{{ vault_nexus_admin_password }}"
-    - nexus_user_password_jenkins: "{{ vault_nexus_user_password_jenkins }}"
-  roles:
-  - role: ansible_nexus_oss
 
 #-----
 # Apply maven role
@@ -203,10 +146,9 @@
   hosts: ["{{ variable_host }}:&maven-clients"]
   become: true
   gather_facts: true
+  roles: [ ansible_role_maven ]
   tags:
   - maven
-  roles:
-  - role: ansible_role_maven
 
 #-----
 # Apply maven nexus config role
@@ -215,10 +157,9 @@
   hosts: ["{{ variable_host }}:&maven-clients"]
   become: true
   gather_facts: true
+  roles: [ ansible_role_maven_nexus_config ]
   tags:
   - mavenNexus
-  roles:
-  - role: ansible_role_maven_nexus_config
 
 #-----
 # Apply pip nexus config role
@@ -227,10 +168,9 @@
   hosts: ["{{ variable_host }}:&pip-clients"]
   become: true
   gather_facts: true
+  roles: [ ansible_role_pip_nexus_config ]
   tags:
   - pipNexus
-  roles:
-  - role: ansible_role_pip_nexus_config
 
 #-----
 # Apply Binary Server role
@@ -238,16 +178,10 @@
 - name: PLAY | Apply the binary_server role to seup a custom binary repository
   hosts: ["{{variable_host }}:&binary-servers"]
   gather_facts: false
+  roles: [ binary_server ]
+  when: host.server_repos.binary is defined
   tags:
   - binaryServer
-  roles:
-  - role: binary_server
-    when: host.server_repos.binary is defined
-    binary_server:
-      repos: "{{ host.server_repos.binary }}"
-      directory:
-        repo: /u01/repo
-        install: /u01/repo/install
 
 #-----
 # Apply Yum Server role
@@ -255,16 +189,10 @@
 - name: PLAY | Apply the yum_server role to seup a custom YUM repository
   hosts: ["{{variable_host }}:&yum-servers"]
   gather_facts: false
+  roles: [ yum_server ]
+  when: host.server_repos.yum is defined
   tags:
   - yumServer
-  roles:
-  - role: yum_server
-    yum_server:
-      repos: "{{ host.server_repos.yum }}"
-      directory:
-        repo: /u01/repo
-        install: /u01/repo/install
-    when: host.server_repos.yum is defined
 
 #-----
 # Configure new VMs to get YUM updates from repo01
@@ -273,13 +201,11 @@
 - name: PLAY | Configure yum client and update systems
   hosts: ["{{variable_host }}"]
   gather_facts: false
+  roles:
+  - yum_client
+  - yum_update
   tags:
   - yumClient
-  roles:
-  - role: yum_client
-    yum_client:
-      repos:  "{{ host.client_repos.yum }}"
-  - role: yum_update
 
 #-----
 # Configure ntp
@@ -292,50 +218,15 @@
   - ntp
 
 #-----
-# Configure Pypi server
-#-----
-- name: PLAY | Configure Pypi Server
-  hosts: ["{{ variable_host }}:&pip-servers"]
-  gather_facts: false
-  tags:
-  - pipServer
-  roles:
-  - role: pip_server
-    pip_server:
-      user: jenkins
-      script: pypi-server-standalone.py
-      script_dest_dir: /home/jenkins/bin
-      script_log_dir: /home/jenkins/log
-      package_dir: /u01/repo/pypi-packages
-    when: host.server_repos.pypi is defined and host.server_repos.pypi == true
-
-
-#-----
-# Configure Pypi client
-#-----
-- name: PLAY | Configure pypi client
-  hosts: ["{{ variable_host }}"]
-  gather_facts: false
-  tags:
-  - pipClient
-  roles:
-  - role: pip_client
-    pip_client:
-      host: "{{ host.client_repos.pypi[0] }}"
-      url: "http://{{ host.client_repos.pypi[0] }}:8080/simple"
-    when: host.client_repos.pypi is defined
-
-#-----
 # Configure git server
 #-----
 - name: PLAY | Configure Git Server
   hosts: ["{{variable_host }}:&git-servers"]
   gather_facts: false
+  roles: [ git_server ]
+  when: host.server_repos.git is defined and host.server_repos.git == true
   tags:
   - gitServer
-  roles:
-  - role: git_server
-    when: host.server_repos.git is defined and host.server_repos.git == true
 
 #-----
 # Configure ansible controller
@@ -343,34 +234,9 @@
 - name: PLAY | Configure ansible controller
   hosts: ["{{variable_host }}:&ansible-controllers"]
   gather_facts: false
+  roles: [ ansible_controller ]
   tags:
   - ansibleController
-  roles:
-  - role: ansible_controller
-    ansible_controller:
-      user: "{{ host.ansible_user }}"
-      path: "/home/{{ host.ansible_user }}/venv_ansible-2.4.3.0"
-      version: 2.4.3.0
-    ansible_controller_selinux:
-      src: http://repo01/binaries/python/custom/selinux/libselinux-2.5-11.el7.x86_64.tar.gz
-
-  
-#-----
-# Configure a Juseppe server to serve Jenkins plugins to a Jenkins server.
-# This is essentially a custom Jenkins Update Center where your Jenkins server
-# cannot reach https://jenkins-ci.org/update-center.json via the Internet.
-#
-# Ensure the host this is run against has Jenkins plugins downloaded and copied
-# to the 'jenkins_plugins' directory (e.g., repo01:/repo/jenkins_plugins)
-#-----
-- name: PLAY | Configure Jenkins Plugin Server
-  hosts: ["{{variable_host }}:&jenkins-plugin-servers"]
-  gather_facts: false
-  tags:
-  - jenkinsPluginServer
-  roles:
-  - role: jenkins_plugin_repository
-    when: host.server_repos.jenkins is defined and host.server_repos.jenkins == true
 
 #-----
 # Configure a host to act as a Jenkins Server
@@ -383,11 +249,10 @@
 - name: PLAY | Configure Jenkins Server
   hosts: ["{{variable_host }}:&jenkins-servers"]
   gather_facts: true
+  roles: [ jenkins_server ]
   tags:
   - jenkinsServer
-  roles:
-  - role: jenkins_server
-      
+
 #-----
 # Configure Jenkins Slaves
 # At a minimum, we want the ansible controller to be a slave to Jenkins such
@@ -396,13 +261,9 @@
 - name: PLAY | Configure Jenkins Slaves
   hosts: ["{{variable_host }}:&ansible-controllers"]
   gather_facts: true
+  roles: [ jenkins_slave ]
   tags:
   - jenkinsSlaves
-  roles:
-  - role: jenkins_slave
-    jenkins_slave_jenkins_slave_name: "{{ inventory_hostname }}"
-    jenkins_slave_jenkins_label: "'{{ inventory_hostname }} ansible'"
-    jenkins_slave_swarm_num_executors: 2
 
 #-----
 # Configure a CA server to act as a central CA for everything
@@ -410,11 +271,9 @@
 - name: PLAY | Configure CFSSL CA Server
   hosts: ["{{variable_host }}:&certificate-authority-servers"]
   gather_facts: false
+  roles: [ cfssl_ca ]
   tags:
   - cfsslCaServer
-  roles:
-  - role: cfssl_ca
-
 #-----
 # Test CSR generation and signature by CA
 # NOTE: This is only an example of getting a certificate from the CA for the

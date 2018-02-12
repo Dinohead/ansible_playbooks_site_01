@@ -1,14 +1,13 @@
 ---
 #========================
-# File darkServer.yml
+# File cifs_client.yml
 #
-# Description: Creates a dark server on the failover cluster
+# Description: Setup ubuntu cifs mounts
 #
 # Author: Derek 'dRock' Halsey
 #========================
 
-- name: Initial Ububtu Configuration
+- name: Setup ubuntu cifs mounts
   hosts: "{{ variable_host }}"
   gather_facts: false
-  roles:
-  - ubuntuCifsClient
+  roles: [ ubuntu_cifs_client ]

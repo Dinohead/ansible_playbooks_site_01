@@ -20,7 +20,7 @@
   gather_facts: false
   roles:
   - linux_setup
-  - ubuntuUpdate
+  - ubuntu_update
   - ubuntu_cifs_client
   tags:
   - initalConfig
